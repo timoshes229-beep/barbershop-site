@@ -55,8 +55,10 @@ export default async (req) => {
   if (name.length < 2) return json(400, { error: "name" });
   if (phone.replace(/\D/g, "").length < 9) return json(400, { error: "phone" });
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  /* trim обов'язковий: якщо у значенні лишився пробіл чи перенос рядка,
+     адреса запиту ламається і Telegram відповідає 404 */
+  const token = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const chat = (process.env.TELEGRAM_CHAT_ID || "").trim();
   if (!token || !chat) {
     console.error("TELEGRAM_BOT_TOKEN або TELEGRAM_CHAT_ID не задані в Netlify");
     return json(500, { error: "config" });
@@ -90,7 +92,10 @@ export default async (req) => {
     });
     if (!r.ok) {
       const t = await r.text();
-      console.error("Telegram відповів помилкою:", r.status, t);
+      console.error("Telegram відповів помилкою:", r.status, t,
+        "| довжина токена:", token.length,
+        "| формат токена ок:", /^\d{6,12}:[A-Za-z0-9_-]{30,}$/.test(token),
+        "| chat_id:", chat);
       return json(502, { error: "telegram" });
     }
   } catch (e) {
