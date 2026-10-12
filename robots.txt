@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://gorgeous-cassata-2d0ce3.netlify.app/sitemap.xml
