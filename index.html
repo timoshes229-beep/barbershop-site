@@ -35,6 +35,12 @@
 html{scroll-behavior:smooth}
 body{margin:0;padding:0;background:#0a0a0a;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow-x:hidden}
 img{max-width:100%}
+/* Повітря між блоками. Відступ стоїть знизу кожного блоку, а не зверху,
+   тому порожні якорі (#quiz, #catalog) опиняються рівно над своїм блоком
+   і переходи по кнопках не зміщуються. Підвал (#cxx) і форма (#bkf) - без відступу. */
+:root{--block-gap:clamp(48px,6vw,96px)}
+body > div[id]:not(:empty):not(#bkf):not(#cxx){margin-bottom:var(--block-gap)}
+@media(max-width:720px){:root{--block-gap:44px}}
 </style>
 </head>
 <body>
@@ -3295,7 +3301,7 @@ var CXX_CONFIG = {
         <label><span class="lb">Ім'я</span>
           <input type="text" name="name" autocomplete="name" placeholder="Як до вас звертатись"></label>
         <label><span class="lb">Телефон</span>
-          <input type="tel" name="phone" autocomplete="tel" placeholder="+380 __ ___ __ __"></label>
+          <input type="tel" name="phone" id="bkfPhone" autocomplete="tel" inputmode="tel" maxlength="19" placeholder="+380 (__) ___-__-__"></label>
       </div>
       <div class="err" id="bkfErr"></div>
 
@@ -3423,6 +3429,91 @@ var CXX_CONFIG = {
     else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
   });
 
+
+  /* ---------- маска телефону: +380 (XX) XXX-XX-XX ---------- */
+  var phoneIn = form.querySelector('[name="phone"]');
+  var PFX = "380", prevD = "";
+
+  function fmtPhone(d) {
+    if (!d) return "";
+    if (d.length < 3) return "+" + d;
+    var n = d.slice(3), s = "+380 (" + n.slice(0, 2);
+    if (n.length >= 2) s += ")";
+    if (n.length > 2) s += " " + n.slice(2, 5);
+    if (n.length > 5) s += "-" + n.slice(5, 7);
+    if (n.length > 7) s += "-" + n.slice(7, 9);
+    return s;
+  }
+  /* будь-який введений чи вставлений номер -> 380XXXXXXXXX.
+     paste = додали кілька цифр одразу (вставка, автозаповнення браузера) */
+  function normPhone(d, paste) {
+    if (d.indexOf("3800") === 0) d = PFX + d.slice(4);         /* звичка набирати 0 67... після +380 */
+    if (paste && d.length > 12) return PFX + d.slice(-9);       /* вставили повний номер поверх +380 ( */
+    if (d.indexOf(PFX) === 0) return d.slice(0, 12);
+    if (d.indexOf("80") === 0) return ("3" + d).slice(0, 12);   /* 80671234567 */
+    if (d.indexOf("0") === 0) return ("38" + d).slice(0, 12);   /* 0671234567 */
+    if (PFX.indexOf(d) === 0) return d;                         /* "3", "38" - ще набирають */
+    return (PFX + d).slice(0, 12);                               /* 671234567 */
+  }
+  function caretAfterDigit(str, k) {
+    var c = 0;
+    for (var i = 0; i < str.length; i++) {
+      if (str.charAt(i) >= "0" && str.charAt(i) <= "9" && ++c === k) return i + 1;
+    }
+    return str.length;
+  }
+  function setPhone(d, k) {
+    prevD = d;
+    phoneIn.value = fmtPhone(d);
+    if (document.activeElement === phoneIn) {
+      var p = d.length ? caretAfterDigit(phoneIn.value, Math.max(k, Math.min(3, d.length))) : 0;
+      if (d.length === 3) p = phoneIn.value.length;
+      try { phoneIn.setSelectionRange(p, p); } catch (x) {}
+    }
+  }
+
+  phoneIn.addEventListener("focus", function () {
+    prevD = phoneIn.value.replace(/\D/g, "");
+    if (!prevD) setPhone(PFX, 3);              /* одразу +380 ( - лишається набрати код оператора */
+  });
+  phoneIn.addEventListener("blur", function () {
+    if (prevD.length <= 3) { prevD = ""; phoneIn.value = ""; }
+  });
+  phoneIn.addEventListener("input", function (e) {
+    var raw = phoneIn.value;
+    var isDel = !!(e.inputType && e.inputType.indexOf("delete") === 0);
+    var pos = phoneIn.selectionStart == null ? raw.length : phoneIn.selectionStart;
+    var before = raw.slice(0, pos).replace(/\D/g, "").length;
+    var rawD = raw.replace(/\D/g, "");
+    var d, k;
+
+    if (isDel) {
+      if (!rawD) {
+        /* виділили все й стерли - лишаємо чисте +380 ( */
+        d = PFX; k = 3;
+      } else if (rawD.indexOf(PFX) !== 0) {
+        /* намагались стерти сам +380 */
+        if (prevD.length > 3) { d = prevD; k = 3; } else { d = ""; k = 0; }
+      } else if (rawD.length === prevD.length) {
+        /* стерли дужку, пробіл чи дефіс - стираємо й цифру поруч */
+        if (rawD.length <= 3) { d = ""; k = 0; }
+        else {
+          var cut = e.inputType === "deleteContentForward" ? before : before - 1;
+          d = rawD; k = before;
+          if (cut >= 3 && cut < rawD.length) { d = rawD.slice(0, cut) + rawD.slice(cut + 1); k = cut; }
+        }
+      } else {
+        d = rawD.slice(0, 12); k = Math.min(before, d.length);
+      }
+    } else {
+      var paste = rawD.length - prevD.length > 1;
+      d = normPhone(rawD, paste);
+      /* набір посимвольно - каретка там, де друкують; вставка - в кінець */
+      k = (!paste && d === rawD.slice(0, 12)) ? Math.min(before, d.length) : d.length;
+    }
+    setPhone(d, k);
+  });
+
   function fail(msg, el) {
     err.textContent = msg; err.classList.add("show");
     if (el) { el.classList.add("bad"); el.focus(); }
@@ -3444,8 +3535,11 @@ var CXX_CONFIG = {
     var phoneEl = form.querySelector('[name="phone"]');
     nameEl.classList.remove("bad"); phoneEl.classList.remove("bad");
     if (d.name.length < 2) return fail("Вкажіть, будь ласка, ваше ім'я.", nameEl);
-    if (d.phone.replace(/\D/g, "").length < 9)
-      return fail("Вкажіть номер телефону, щоб ми могли підтвердити запис.", phoneEl);
+    var pd = d.phone.replace(/\D/g, "");
+    if (pd.length !== 12 || pd.indexOf("380") !== 0)
+      return fail(pd.length <= 3
+        ? "Вкажіть номер телефону, щоб ми могли підтвердити запис."
+        : "Номер неповний. Потрібно 9 цифр після +380, наприклад +380 (67) 123-45-67.", phoneEl);
 
     var L = [kind === "academy" ? "ЗАЯВКА НА НАВЧАННЯ" : "ЗАПИС У БАРБЕРШОП", ""];
     L.push("Ім'я: " + d.name);
