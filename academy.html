@@ -1756,12 +1756,22 @@ var CXX_CONFIG = {
     }
   }
 
+  /* +380 ( стоїть у полі одразу - лишається набрати 9 цифр */
+  setPhone(PFX, 3);
   phoneIn.addEventListener("focus", function () {
     prevD = phoneIn.value.replace(/\D/g, "");
-    if (!prevD) setPhone(PFX, 3);              /* одразу +380 ( - лишається набрати код оператора */
+    if (prevD.length < 3) setPhone(PFX, 3);
+    else setPhone(prevD, prevD.length);           /* каретка - в кінець, після +380 ( */
   });
   phoneIn.addEventListener("blur", function () {
-    if (prevD.length <= 3) { prevD = ""; phoneIn.value = ""; }
+    if (prevD.length < 3) setPhone(PFX, 3);
+  });
+  /* друкувати можна тільки цифри і тільки поки номер не повний */
+  phoneIn.addEventListener("beforeinput", function (e) {
+    if (e.inputType !== "insertText" || e.data == null) return;
+    if (/\D/.test(e.data)) { e.preventDefault(); return; }
+    var selLen = (phoneIn.selectionEnd || 0) - (phoneIn.selectionStart || 0);
+    if (prevD.length >= 12 && selLen === 0) e.preventDefault();
   });
   phoneIn.addEventListener("input", function (e) {
     var raw = phoneIn.value;
@@ -1791,6 +1801,8 @@ var CXX_CONFIG = {
       }
     } else {
       var paste = rawD.length - prevD.length > 1;
+      /* номер уже повний - зайві цифри не приймаємо (запасний варіант для старих браузерів) */
+      if (!paste && prevD.length === 12 && rawD.length > 12) { setPhone(prevD, Math.max(3, before - 1)); return; }
       d = normPhone(rawD, paste);
       /* набір посимвольно - каретка там, де друкують; вставка - в кінець */
       k = (!paste && d === rawD.slice(0, 12)) ? Math.min(before, d.length) : d.length;
